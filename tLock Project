@@ -1,0 +1,456 @@
+#include <Keypad.h>
+#include<LiquidCrystal.h>
+#include <EEPROM.h>
+#include <MFRC522.h>
+#include<SPI.h>
+#include <Servo.h>
+
+//EEPROM variables
+  int v[17];
+  
+  //rfid var
+   String content="";
+
+//RFID Data
+//Default UID: A0 E8 24 83
+
+//adminMenu variables
+  char x = 0;
+
+//servomotor
+ Servo servo1;
+
+//keypad begin
+const byte ROWS=4;
+const byte COLS=4;
+char hexaKeys[ROWS][COLS]=
+{ 
+  {'1', '2' ,'3', 'A'},
+  {'4', '5' ,'6', 'B'},
+  {'7', '8' ,'9', 'C'},
+  {'*', '0' ,'#', 'D'}
+};
+byte rowPins[ROWS] = {22, 23, 24, 25}; //connect to the row pinouts of the keypad 
+byte colPins[COLS] = {26, 27, 28, 29};
+Keypad keypad = Keypad(makeKeymap(hexaKeys),rowPins,colPins,ROWS,COLS);
+//keypad end
+  
+//lcd declarare  
+LiquidCrystal lcd(12,11,5,4,3,2);
+//lcd end
+
+//rfd declarare
+  #define SS_PIN 53
+  #define RST_PIN 49 
+  MFRC522 marcel(SS_PIN,RST_PIN);
+//functii
+
+void customdelay(unsigned long ms)
+{
+    uint32_t start = micros();
+
+    while (ms > 0) {
+        yield();
+        while ( ms > 0 && (micros() - start) >= 1000) {
+            x=keypad.getKey();
+            if(x>0)return;
+            ms--;
+            start += 1000;
+        }
+    }
+}
+
+void activateMotor()
+{
+  
+  servo1.write(180);
+  delay(2e4);
+  servo1.write(0);
+}
+
+void enterpin(int x)
+{ 
+  int v[11];
+  
+  lcd.setCursor(0,1);
+  lcd.print("enter pin:");
+  
+  bool ok=0;
+  
+  for(int i=0;i<4;i++)
+    {   
+      char z=NULL;
+      while(z==NULL)
+          z=keypad.getKey();
+        
+        lcd.print('*');
+        v[i]=z;
+        z=NULL;
+    }
+    for(int i=0;i<4;i++)
+    {
+      
+      if(EEPROM.read(100+x*10+i+1)!=v[i])
+        {
+          ok=1;
+          break;
+        }
+        
+    }
+  if(ok==1)
+  {
+     lcd.clear();
+     lcd.setCursor(0,0);
+     lcd.print("wrong pin ");
+     lcd.setCursor(0,1);
+     lcd.print("try again");
+     delay(2000);
+     enterpin(x);
+    delay(5000);
+  }
+  else
+  {
+     lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("WELCOME HOME ");
+  lcd.setCursor(0,1);
+  lcd.print("door opens*");
+  activateMotor();
+  delay(5000);
+  }
+}
+
+void enteruser()
+{
+  char mn=NULL;
+   lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("hello user ");
+  while(mn==NULL)mn=keypad.getKey();
+
+  byte val=EEPROM.read(100+(mn-48)*10+1);
+  
+  if(val!=0)
+  {
+    lcd.print(mn);
+    enterpin(mn-48);
+  }
+  else
+  {
+    lcd.clear();
+    lcd.println("no pin stored"); 
+    delay(1000);
+    enteruser();
+    return;
+  }
+  
+}
+
+void rmPass()
+{ 
+  char vv=NULL;
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("Select user ");
+  
+  while(vv==NULL)
+    vv=keypad.getKey();
+  
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("removing user ");
+  lcd.print(vv);
+  int poz = vv-48;
+  delay(3000);
+   for(int i=0;i<10;i++)
+   {
+      EEPROM.write(100+poz*10+i,0);
+   }
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("user removed");
+   
+}
+
+void addPass(int y)
+{
+    int v[6];
+    int verif[6];
+    lcd.setCursor(0,1);
+    lcd.print("Please add pin");
+    delay(3000);
+    char z=NULL;
+    bool ok=0;
+    lcd.clear();
+    lcd.setCursor(0,0);
+    for(int i=0;i<4;i++)
+    {   
+      while(z==NULL)
+          z=keypad.getKey();
+        
+        lcd.print("*");
+        v[i]=z;
+        z=NULL;
+    }
+    z=NULL;
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("repeta parola");
+    lcd.setCursor(0,1);
+    for(int i=0;i<4;i++)
+    {   
+        while(z==NULL)
+          z=keypad.getKey();
+        lcd.print("*");
+        verif[i]=z;
+        z=NULL;
+    } 
+    for(int i=0;i<4;i++)
+    {
+      if(verif[i]!=v[i])
+        {
+          ok=1;
+          break;
+        }
+    }
+    if(ok==0)
+    {    lcd.clear();
+         lcd.setCursor(0,0);
+         lcd.print("WELCOME ");
+         lcd.print (y);
+         delay(1000);
+         EEPROM.write(100+y*10,y);
+         for(int i=0;i<4;i++)
+         EEPROM.write(100+y*10+i+1,v[i]);
+         return;
+    }
+     else
+    {
+       lcd.clear();
+       lcd.setCursor(0,0);
+       lcd.print("wrong pin");
+       addPass(y);
+       return;
+    }
+    
+}
+void selectuser()
+{  
+    lcd.clear();
+   lcd.setCursor(0,0);
+   lcd.print("Select user");
+   char y=NULL;
+   while(y==NULL)
+   {
+      y=keypad.getKey();
+   }
+   Serial.println(y);
+  if(y>=49&&y<=57)
+  { 
+    if(EEPROM.read(100+(y-48)*10)==0)
+    { 
+      EEPROM.write(100 + (y-48)*10, 1);
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print("hello user ");
+      lcd.print(y-48);
+      
+      
+      addPass(y-48);
+            return ;
+    }
+    else
+    {
+      lcd.clear();
+      lcd.println("User ocupat");
+      delay(1000);
+      
+      selectuser();
+      return;
+      }  
+  }
+    
+}
+void fun()
+{
+  x=NULL;
+    while(x<=48 || x>51)
+  {
+    lcd.clear();
+    lcd.print("1 to add");
+    customdelay(2000);
+    if(x>=49 && x<52)return;
+    lcd.clear();
+    lcd.print("2 to delete all");
+    customdelay(2000);
+    if(x>=49 && x<52)return;
+    lcd.clear();
+    lcd.print("3 to exit");
+    customdelay(2000);
+    if(x>=49 && x<52)return;
+  }
+}
+
+void initializareAdmin()
+{
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("Welcome, admin");
+  lcd.setCursor(0,1);
+  delay(3000);
+  fun();
+
+   switch (x)
+   {
+      case 49:
+        lcd.print("Insert password");
+        selectuser();
+        break;
+      case 50:
+        rmPass();
+        break;
+      case 51:
+      return;  
+        break;
+   }
+}
+ 
+
+ 
+ int ok=0;
+int verifymarcel()
+{
+  // Look for new cards
+  if ( ! marcel.PICC_IsNewCardPresent()) 
+  {
+    return 0;
+  }
+  // Select one of the cards
+  if ( ! marcel.PICC_ReadCardSerial()) 
+  {
+    return 0;
+  }
+  //Show UID on serial monitor
+  String content= "";
+  byte letter;
+  for (byte i = 0; i < marcel.uid.size; i++) 
+  {
+
+     content.concat(String(marcel.uid.uidByte[i] < 0x10 ? " 0" : " "));
+     content.concat(String(marcel.uid.uidByte[i], HEX));
+  }
+  content.toUpperCase();
+  if (content.substring(1) == "A0 E8 24 83") //change here the UID of the card/cards that you want to give access
+  {
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print("Card corect");
+        return 1;
+  }
+ 
+ else   {
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("Card gresit");
+    lcd.setCursor(0,1);
+    lcd.print("Try again");
+    delay(2000);
+    lcd.clear();
+    return -1;
+  }
+}
+
+
+
+void requestAdminAcc()
+{ 
+   lcd.clear();
+   lcd.setCursor(0,0);
+   lcd.println("Pentru a accesa");
+   lcd.setCursor(0,1);
+   lcd.print("Apropie card");
+   delay(1000);
+   int tr=0;
+   while(tr==0)
+   {
+    tr=verifymarcel();
+    if(tr==-1)tr=0;
+   }
+   initializareAdmin();
+}
+
+void RM_ALL_PINS()
+{
+  for(int i=0;i<10;i++)
+  {
+    EEPROM.write(100+i*10, 0);
+  }
+}
+
+bool passCheck()          //functia asta verifica daca exista parole
+{
+  int nrPar=-1;
+  
+  for(int i=0;i<10;i++)
+  {
+    //EEPROM.write(100+i*10, 0);
+    byte val = EEPROM.read(100+i*10);
+      if(val!=0)
+      {
+        ++nrPar;
+      }
+      
+  }
+  return (nrPar==-1 ? 0 : 1);
+}
+
+
+//gata cu functiile
+void setup() 
+{
+ 
+  servo1.attach(10); //servomotor
+  
+  Serial.begin(9600);
+  lcd.begin(16,2);
+  SPI.begin();      
+  marcel.PCD_Init();
+
+  bool isPass=passCheck();
+ 
+  if(!isPass)
+  {
+    lcd.setCursor(0,0);
+    lcd.print("Nici o parola inreg");
+    delay(1000);
+    requestAdminAcc();
+  }
+}
+
+
+int pos=0;
+void loop() 
+{ 
+  lcd.clear();
+  char ow=NULL;
+  
+
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.println("A->Open the door");
+  lcd.setCursor(0,1);
+  lcd.println("B->Acces admin  ");
+  
+  while(ow==NULL)ow=keypad.getKey();
+  
+  if(ow=='B')requestAdminAcc();
+  else if(ow=='C')RM_ALL_PINS();
+  else if(ow=='A' && passCheck())enteruser();
+  else 
+  {
+    lcd.print("No user saved"); 
+  }
+  
+  
+  delay(100);
+}
